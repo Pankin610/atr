@@ -1,6 +1,13 @@
+import math
+
 import yfinance as yf
 from datetime import datetime, timedelta
 from dataclasses import dataclass
+import warnings
+
+from pandas.errors import SettingWithCopyWarning
+
+warnings.simplefilter(action='ignore', category=SettingWithCopyWarning)
 
 ATR_WINDOW = 5
 
@@ -13,17 +20,25 @@ class Bar:
 
 
 def get_data_chunk(instrument, end_date):
-    start_date = end_date - timedelta(days=ATR_WINDOW * 2)
+    start_date = end_date - timedelta(days=(ATR_WINDOW + 1) * 365)
     return yf.download(instrument, start_date, end_date)
 
 
-def get_bar_chunk(instrument, end_date):
-    data = get_data_chunk(instrument, end_date)
-    data.reset_index(inplace=True)
-    data['Date'] = data['Date'].dt.strftime('%Y/%m/%d')
+def get_bar_chunk(instrument, end_date, timeframe='D'):
+    data = get_data_chunk(instrument, end_date)[['High', 'Low']]
+    data['DateVal'] = data.index.values
+    dates = data['DateVal'].dt.strftime('%Y/%m/%d')
+    lows, highs = data['Low'].resample(timeframe).min(), data['High'].resample(timeframe).max()
+    start_dates = dates.resample(timeframe).min()
+    end_dates = dates.resample(timeframe).max()
 
-    lows, highs, dates = data['Low'], data['High'], data['Date']
-    bars = [Bar(low=lows[i], high=highs[i], start_date=dates[i], end_date=dates[i]) for i in range(len(lows))]
+    good_indices = [i for i in range(len(lows)) if not math.isnan(lows[i])]
+    lows = [lows[i] for i in good_indices]
+    highs = [highs[i] for i in good_indices]
+    start_dates = [start_dates[i] for i in good_indices]
+    end_dates = [end_dates[i] for i in good_indices]
+
+    bars = [Bar(low=lows[i], high=highs[i], start_date=start_dates[i], end_date=end_dates[i]) for i in range(len(lows))]
     return bars
 
 
@@ -52,7 +67,7 @@ class ATR:
                (self.value, str(self.good_bars), str(self.anomaly_bars))
 
 
-def get_current_atr(instrument):
+def get_current_atr(instrument, bar_timeframe):
     cur_date = datetime.today()
     bars_queue = []
     good_bars = []
@@ -61,7 +76,7 @@ def get_current_atr(instrument):
     while True:
         while len(good_bars) < ATR_WINDOW:
             if len(bars_queue) == 0:
-                bars_queue = get_bar_chunk(instrument, cur_date)
+                bars_queue = get_bar_chunk(instrument, cur_date, bar_timeframe)
                 cur_date = cur_date - timedelta(days=2 * ATR_WINDOW)
             good_bars.append(bars_queue[-1])
             bars_queue = bars_queue[:-1]
@@ -77,4 +92,6 @@ def get_current_atr(instrument):
 if __name__ == "__main__":
     print("Please enter the instrument name (ex: AAPL)")
     input_instrument = input()
-    print(get_current_atr(input_instrument))
+    print("Please enter timeframe (ex: D, W, Y)")
+    atr_timeframe = input()
+    print(get_current_atr(input_instrument, atr_timeframe))
