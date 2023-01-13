@@ -11,6 +11,7 @@ warnings.simplefilter(action='ignore', category=SettingWithCopyWarning)
 
 ATR_WINDOW = 5
 
+
 @dataclass
 class Bar:
     low: float
@@ -18,9 +19,17 @@ class Bar:
     start_date: datetime
     end_date: datetime
 
+    def __str__(self):
+        return " Bar low: %.2f\n" \
+               " Bar high: %.2f\n" \
+               " Bar start date: %s\n" \
+               " Bar end date: %s\n" \
+               " Bar ATR: %.2f\n\n" % \
+               (self.low, self.high, self.start_date, self.end_date, bar_atr(self))
+
 
 def get_data_chunk(instrument, end_date):
-    start_date = end_date - timedelta(days=(ATR_WINDOW + 1) * 365)
+    start_date = end_date - timedelta(days=(2 * ATR_WINDOW) * 365 + 5)
     return yf.download(instrument, start_date, end_date)
 
 
@@ -54,30 +63,46 @@ def average_bar_atr(bars):
     return sum(bar_atr(bar) for bar in bars) / len(bars)
 
 
+def bars_to_str(bars):
+    if bars is None or not bars:
+        return str(None)
+
+    return '\n'.join(str(bar) for bar in bars)
+
+
 class ATR:
-    def __init__(self, good_bars, anomaly_bars=None):
+    def __init__(self, current_bar, good_bars, anomaly_bars=None):
         if not anomaly_bars:
             anomaly_bars = None
+        self.current_bar = current_bar
         self.value = average_bar_atr(good_bars)
         self.good_bars = good_bars
         self.anomaly_bars = anomaly_bars
 
     def __str__(self):
-        return 'Final ATR value: %f\n Bars accounted: %s\n Bars discarded: %s\n' % \
-               (self.value, str(self.good_bars), str(self.anomaly_bars))
+        return 'Final ATR value: %.2f\n' \
+               'Current bar: \n%s' \
+               'Current bar %% of ATR: %.2f%%\n\n' \
+               'Bars accounted: \n%s\n ' \
+               'Bars discarded: %s\n' % \
+               (self.value,
+                str(self.current_bar),
+                bar_atr(self.current_bar) / self.value * 100.,
+                bars_to_str(self.good_bars),
+                bars_to_str(self.anomaly_bars))
 
 
 def get_current_atr(instrument, bar_timeframe):
     cur_date = datetime.today()
-    bars_queue = []
+    bars_queue = get_bar_chunk(instrument, cur_date, bar_timeframe)
+    current_bar = bars_queue[-1]
+    bars_queue = bars_queue[:-1]
+
     good_bars = []
     skipped_bars = []
 
     while True:
         while len(good_bars) < ATR_WINDOW:
-            if len(bars_queue) == 0:
-                bars_queue = get_bar_chunk(instrument, cur_date, bar_timeframe)
-                cur_date = cur_date - timedelta(days=2 * ATR_WINDOW)
             good_bars.append(bars_queue[-1])
             bars_queue = bars_queue[:-1]
 
@@ -86,7 +111,7 @@ def get_current_atr(instrument, bar_timeframe):
         good_bars = [bar for bar in good_bars if not is_anomaly_bar(bar, atr)]
         if len(good_bars) == ATR_WINDOW:
             break
-    return ATR(good_bars, skipped_bars)
+    return ATR(current_bar, good_bars, skipped_bars)
 
 
 if __name__ == "__main__":
