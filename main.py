@@ -3,6 +3,7 @@ import math
 import yfinance as yf
 from datetime import datetime, timedelta
 from dataclasses import dataclass
+import pandas as pd
 import warnings
 
 from pandas.errors import SettingWithCopyWarning
@@ -30,7 +31,9 @@ class Bar:
 
 def get_data_chunk(instrument, end_date):
     start_date = end_date - timedelta(days=(2 * ATR_WINDOW) * 365 + 5)
-    return yf.download(instrument, start_date, end_date)
+    return pd.concat([
+        yf.download(instrument, start_date, end_date),
+        yf.download(instrument, start=end_date - timedelta(days=7), end=end_date, interval='1m')])
 
 
 def get_bar_chunk(instrument, end_date, timeframe='D'):
