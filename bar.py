@@ -3,6 +3,10 @@ from dataclasses import dataclass
 import yfinance as yf
 import pandas as pd
 import math
+import sys
+import os
+import threading
+
 
 def bar_atr(bar):
     return bar.high - bar.low
@@ -52,11 +56,23 @@ def yf_data_to_bars(data, timeframe):
 
 def get_bars(ticker, start_date, end_date, timeframe='D'):
     data = pd.concat([
-        yf.download(ticker, start_date, end_date),
-        yf.download(ticker, start=end_date - timedelta(days=7), end=end_date, interval='1m')])
+        yf.download(ticker, start_date, end_date, progress=False),
+        yf.download(ticker, start=end_date - timedelta(days=7), end=end_date, interval='1m', progress=False)])
     return yf_data_to_bars(data, timeframe)
 
 
 def get_recent_bars(ticker, days):
-    data = yf.download(ticker, datetime.today() - timedelta(days=4 + days))
+    data = yf.download(ticker, datetime.today() - timedelta(days=4 + days), progress=False)
     return yf_data_to_bars(data[-days:], 'D')
+
+def YfinanceDecorator(func):
+    def wrapper(*args, **kwargs):
+        old_stdout = sys.stdout
+        try:
+            with open("log.txt", "w") as temp_output:
+                sys.stdout = temp_output
+                return func(*args, **kwargs)
+        finally:
+            sys.stdout = old_stdout
+    return wrapper
+yf.download = YfinanceDecorator(yf.download)

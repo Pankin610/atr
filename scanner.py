@@ -24,15 +24,27 @@ class Scanner:
         self.stock_data = {}
         self.day_len = 3
         self.data_mutex = threading.Lock()
+        self.terminate_event = threading.Event()
         self.update_data_loop = threading.Thread(target=self.update_stocks_loop, daemon=True)
         self.update_data_loop.start()
 
-    def get_rising_stocks(self):
+    def stop_update_loop(self):
+        self.terminate_event.set()
+        self.update_data_loop.join()
+
+    def __del__(self):
+        self.stop_update_loop()
+    
+    def hold_updates(self):
         self.data_mutex.acquire()
-        try:
-            return [stock for stock in self.all_stocks if self.is_rising_stock(stock)]
-        finally:
+
+    def continue_updates(self):
+        if self.data_mutex.locked():
             self.data_mutex.release()
+
+    def get_filtered_stocks(self, filter):
+        with self.data_mutex:
+            return [stock for stock in self.all_stocks if filter(stock)]
 
     def is_rising_stock(self, stock):
         if not (stock in self.stock_data):
@@ -40,8 +52,20 @@ class Scanner:
         highs = [bar.high for bar in self.stock_data[stock]]
         return highs == sorted(highs)
 
+    def is_falling_stock(self, stock):
+        if not (stock in self.stock_data):
+            return False
+        highs = [bar.high for bar in self.stock_data[stock]]
+        return highs == list(reversed(sorted(highs)))
+
+    def get_rising_stocks(self):
+        return self.get_filtered_stocks(self.is_rising_stock)
+
+    def get_falling_stocks(self):
+        return self.get_filtered_stocks(self.is_falling_stock)
+
     def update_stocks_loop(self):
-        while True:
+        while not self.terminate_event.is_set():
             if not self.stock_batches:
                 self.stock_batches = self.all_stocks
                 random.shuffle(self.stock_batches)
@@ -51,12 +75,9 @@ class Scanner:
             self.update_stock_batch(batch)
 
     def update_stock_batch(self, batch):
-        self.data_mutex.acquire()
-        try:
+        with self.data_mutex:
             for stock in batch:
                 self.stock_data[stock] = self.get_stock_data_for_trend(stock)
-        finally:
-            self.data_mutex.release()
 
     def get_stock_data_for_trend(self, stock):
         return get_recent_bars(stock, self.day_len)
@@ -65,4 +86,4 @@ class Scanner:
 if __name__ == '__main__':
     scanner = Scanner()
     time.sleep(10)
-    print(scanner.get_rising_stocks())
+    print(scanner.get_falling_stocks())
