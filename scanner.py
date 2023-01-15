@@ -7,6 +7,7 @@ import threading
 import time
 import warnings
 from pandas.errors import PerformanceWarning
+from bar import *
 
 warnings.simplefilter(action='ignore', category=PerformanceWarning)
 
@@ -20,7 +21,7 @@ class Scanner:
         self.all_stocks = get_all_stocks()
         self.stock_batches = []
         self.batch_size = 50
-        self.stock_data = pd.DataFrame()
+        self.stock_data = {}
         self.day_len = 3
         self.data_mutex = threading.Lock()
         self.update_data_loop = threading.Thread(target=self.update_stocks_loop, daemon=True)
@@ -36,7 +37,7 @@ class Scanner:
     def is_rising_stock(self, stock):
         if not (stock in self.stock_data):
             return False
-        highs = list(self.stock_data[stock].values)
+        highs = [bar.high for bar in self.stock_data[stock]]
         return highs == sorted(highs)
 
     def update_stocks_loop(self):
@@ -50,23 +51,18 @@ class Scanner:
             self.update_stock_batch(batch)
 
     def update_stock_batch(self, batch):
-        data = self.get_stock_data_for_trend(batch)['High']
-
         self.data_mutex.acquire()
         try:
-            if len(self.stock_data) == 0:
-                self.stock_data = data
-            else:
-                self.stock_data[batch] = data
+            for stock in batch:
+                self.stock_data[stock] = self.get_stock_data_for_trend(stock)
         finally:
             self.data_mutex.release()
 
-    def get_stock_data_for_trend(self, stocks):
-        cur_date = datetime.today()
-        data = yf.download(stocks, start=cur_date - timedelta(days=4 + self.day_len), progress=False)
-        return data[-self.day_len:]
+    def get_stock_data_for_trend(self, stock):
+        return get_recent_bars(stock, self.day_len)
 
 
-scanner = Scanner()
-time.sleep(1)
-print(scanner.get_rising_stocks())
+if __name__ == '__main__':
+    scanner = Scanner()
+    time.sleep(10)
+    print(scanner.get_rising_stocks())
