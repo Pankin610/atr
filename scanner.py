@@ -8,6 +8,7 @@ import time
 import warnings
 from pandas.errors import PerformanceWarning
 from bar import *
+import time
 
 warnings.simplefilter(action='ignore', category=PerformanceWarning)
 
@@ -17,7 +18,8 @@ def get_all_stocks():
 
 
 class Scanner:
-    def __init__(self):
+    def __init__(self, data_client):
+        self.data_client = data_client
         self.all_stocks = get_all_stocks()
         self.stock_batches = []
         self.batch_size = 50
@@ -75,12 +77,13 @@ class Scanner:
             self.update_stock_batch(batch)
 
     def update_stock_batch(self, batch):
-        with self.data_mutex:
-            for stock in batch:
+        for stock in batch:
+            time.sleep(0.5)
+            with self.data_mutex:
                 self.stock_data[stock] = self.get_stock_data_for_trend(stock)
 
     def get_stock_data_for_trend(self, stock):
-        return get_recent_bars(stock, self.day_len)
+        return self.data_client.get_recent_bars(stock, self.day_len)
 
 
 if __name__ == '__main__':

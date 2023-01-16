@@ -4,8 +4,8 @@ import yfinance as yf
 import pandas as pd
 import math
 import sys
-import os
-import threading
+import pandas_datareader as pdr
+
 
 
 def bar_atr(bar):
@@ -32,47 +32,3 @@ def bars_to_str(bars):
         return str(None)
 
     return '\n'.join(str(bar) for bar in bars)
-
-
-def yf_data_to_bars(data, timeframe):
-    if len(data) == 0:
-        return []
-
-    data['DateVal'] = data.index.values
-    dates = data['DateVal'].dt.strftime('%Y/%m/%d')
-    lows, highs = data['Low'].resample(timeframe).min(), data['High'].resample(timeframe).max()
-    start_dates = dates.resample(timeframe).min()
-    end_dates = dates.resample(timeframe).max()
-
-    good_indices = [i for i in range(len(lows)) if not math.isnan(lows[i])]
-    lows = [lows[i] for i in good_indices]
-    highs = [highs[i] for i in good_indices]
-    start_dates = [start_dates[i] for i in good_indices]
-    end_dates = [end_dates[i] for i in good_indices]
-
-    bars = [Bar(low=lows[i], high=highs[i], start_date=start_dates[i], end_date=end_dates[i]) for i in range(len(lows))]
-    return bars
-
-
-def get_bars(ticker, start_date, end_date, timeframe='D'):
-    data = pd.concat([
-        yf.download(ticker, start_date, end_date, progress=False),
-        yf.download(ticker, start=end_date - timedelta(days=7), end=end_date, interval='1m', progress=False)])
-    return yf_data_to_bars(data, timeframe)
-
-
-def get_recent_bars(ticker, days):
-    data = yf.download(ticker, datetime.today() - timedelta(days=4 + days), progress=False)
-    return yf_data_to_bars(data[-days:], 'D')
-
-def YfinanceDecorator(func):
-    def wrapper(*args, **kwargs):
-        old_stdout = sys.stdout
-        try:
-            with open("log.txt", "w") as temp_output:
-                sys.stdout = temp_output
-                return func(*args, **kwargs)
-        finally:
-            sys.stdout = old_stdout
-    return wrapper
-yf.download = YfinanceDecorator(yf.download)
