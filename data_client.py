@@ -5,6 +5,9 @@ import sys
 import requests
 from datetime import datetime, timedelta
 
+class ApiUnavailableException(Exception):
+    pass
+
 # interface
 class DataClient:
     def get_recent_bars(self, ticker, days):
@@ -30,7 +33,7 @@ class YfinanceClient(DataClient):
     def yf_data_to_bars(self, data, timeframe):
         if len(data) == 0:
             return []
-
+        print(data.head())
         data['DateVal'] = data.index.values
         dates = data['DateVal'].dt.strftime('%Y/%m/%d')
         lows, highs = data['Low'].resample(timeframe).min(), data['High'].resample(timeframe).max()
@@ -47,14 +50,17 @@ class YfinanceClient(DataClient):
         return bars
 
     def get_recent_bars(self, ticker, days):
-        data = yf.download(ticker, datetime.today() - timedelta(days=4 + days), progress=False)
+        data = yf.download(ticker, datetime.today() - timedelta(days=7 + days), progress=False)
+        if len(data) == 0 and days > 0:
+            raise ApiUnavailableException('Yfinance unavailable')
         return self.yf_data_to_bars(data[-days:], 'D')
 
     def get_bars(self, ticker, start_date, end_date, timeframe='D'):
         data = pd.concat([
             yf.download(ticker, start_date, end_date, progress=False),
             yf.download(ticker, start=end_date - timedelta(days=7), end=end_date, interval='1m', progress=False)])
-        print(data.tail())
+        if len(data) == 0 and start_date < end_date:
+            raise ApiUnavailableException('Yfinance unavailable')
         return self.yf_data_to_bars(data, timeframe)
 
 
@@ -68,7 +74,7 @@ class PolygonClient(DataClient):
 
     def response_to_bars(self, response, start_date):
         if not ('results' in response):
-            return []
+            raise ApiUnavailableException('Polygon API unavailable')
 
         bars = []
         cur_date = start_date
@@ -80,7 +86,7 @@ class PolygonClient(DataClient):
     def get_bars(self, ticker, start_date, end_date, timeframe='D'):
         if timeframe != 'D':
             raise NotImplementedError()
-            
+
         api_url = self.get_api_url(ticker, start_date, end_date)
         response = requests.get(api_url).json()
         return self.response_to_bars(response, end_date)
@@ -91,4 +97,24 @@ class PolygonClient(DataClient):
         start_date = cur_date - timedelta(days=7 + days)
         api_url = self.get_api_url(ticker, start_date, cur_date)
         response = requests.get(api_url).json()
-        return self.response_to_bars(response, cur_date)
+        return self.response_to_bars(response, cur_date)[-days:]
+
+
+class MixedDataClient(DataClient):
+    def __init__(self):
+        self.yfinance = YfinanceClient()
+        self.polygon = PolygonClient()
+
+    def api_call(self, func_list, *args, **kwargs):
+        for func in func_list:
+            try:
+                return func(*args, **kwargs)
+            except:
+                pass
+        raise ApiUnavailableException('No available API')
+
+    def get_recent_bars(self, *args, **kwargs):
+        return self.api_call([self.yfinance.get_recent_bars, self.polygon.get_recent_bars], *args, **kwargs)
+        
+    def get_bars(self, *args, **kwargs):
+        return self.api_call([self.yfinance.get_bars, self.polygon.get_bars], *args, **kwargs)

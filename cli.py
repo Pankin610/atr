@@ -16,12 +16,16 @@ class SockCli(Cmd):
 
     def do_atr(self, inp):
         with scanner.data_mutex:
-            args = inp.split(' ')
-            if len(args) < 2:
-                print("Incomplete arguments. Put a ticker and a timeframe for ATR")
-                return
-            print(get_current_atr(args[0], args[1], PolygonClient()))
+            try:
+                args = inp.split(' ')
+                if len(args) < 2:
+                    print("Incomplete arguments. Put a ticker and a timeframe for ATR")
+                    return
+                print(get_current_atr(args[0], args[1], MixedDataClient()))
+            except Exception as e:
+                print('Something went wrong: ' + str(e))
 
 
-scanner = Scanner(PolygonClient())
+scanner = Scanner(MixedDataClient())
+scanner.batch_size = 3
 SockCli().cmdloop()

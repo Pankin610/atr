@@ -9,6 +9,7 @@ import warnings
 from pandas.errors import PerformanceWarning
 from bar import *
 import time
+from data_client import ApiUnavailableException
 
 warnings.simplefilter(action='ignore', category=PerformanceWarning)
 
@@ -20,13 +21,13 @@ def get_all_stocks():
 class Scanner:
     def __init__(self, data_client):
         self.data_client = data_client
-        self.all_stocks = get_all_stocks()
         self.stock_batches = []
         self.batch_size = 50
         self.stock_data = {}
         self.day_len = 3
         self.data_mutex = threading.Lock()
         self.terminate_event = threading.Event()
+        self.all_stocks = get_all_stocks()
         self.update_data_loop = threading.Thread(target=self.update_stocks_loop, daemon=True)
         self.update_data_loop.start()
 
@@ -75,12 +76,17 @@ class Scanner:
             self.stock_batches = self.stock_batches[self.batch_size:]
 
             self.update_stock_batch(batch)
+            if not self.stock_batches:
+                time.sleep(30)
 
     def update_stock_batch(self, batch):
-        for stock in batch:
-            time.sleep(0.5)
-            with self.data_mutex:
-                self.stock_data[stock] = self.get_stock_data_for_trend(stock)
+        with self.data_mutex:
+            for stock in batch:
+                try:
+                    data = self.get_stock_data_for_trend(stock)
+                    self.stock_data[stock] = data
+                except ApiUnavailableException as e:
+                    break
 
     def get_stock_data_for_trend(self, stock):
         return self.data_client.get_recent_bars(stock, self.day_len)
