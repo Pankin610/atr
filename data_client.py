@@ -30,10 +30,9 @@ class YfinanceClient(DataClient):
         return wrapper
     yf.download = YfinanceDecorator(yf.download)
 
-    def yf_data_to_bars(self, data, timeframe):
+    def yf_data_to_bars(self, data, timeframe='D'):
         if len(data) == 0:
             return []
-        print(data.head())
         data['DateVal'] = data.index.values
         dates = data['DateVal'].dt.strftime('%Y/%m/%d')
         lows, highs = data['Low'].resample(timeframe).min(), data['High'].resample(timeframe).max()
@@ -50,10 +49,11 @@ class YfinanceClient(DataClient):
         return bars
 
     def get_recent_bars(self, ticker, days):
-        data = yf.download(ticker, datetime.today() - timedelta(days=7 + days), progress=False)
+        ticker = yf.Ticker(ticker)
+        data = ticker.history(period='%dd' % days)
         if len(data) == 0 and days > 0:
             raise ApiUnavailableException('Yfinance unavailable')
-        return self.yf_data_to_bars(data[-days:], 'D')
+        return self.yf_data_to_bars(data)
 
     def get_bars(self, ticker, start_date, end_date, timeframe='D'):
         data = pd.concat([

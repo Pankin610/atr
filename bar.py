@@ -2,10 +2,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 import yfinance as yf
 import pandas as pd
-import math
-import sys
 import pandas_datareader as pdr
-
 
 
 def bar_atr(bar):
@@ -25,6 +22,14 @@ class Bar:
                " Bar end date: %s\n" \
                " Bar ATR: %.2f\n\n" % \
                (self.low, self.high, self.start_date, self.end_date, bar_atr(self))
+
+    def to_dict(self):
+        return {
+            "low": self.low,
+            "high": self.high,
+            "start_date": str(self.start_date),
+            "end_date": str(self.end_date)
+        }
 
 
 def bars_to_str(bars):

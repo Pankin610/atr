@@ -27,7 +27,8 @@ class Scanner:
         self.day_len = 3
         self.data_mutex = threading.Lock()
         self.terminate_event = threading.Event()
-        self.all_stocks = get_all_stocks()
+        self.all_stocks = []
+        self.sleep_time = 3
         self.update_data_loop = threading.Thread(target=self.update_stocks_loop, daemon=True)
         self.update_data_loop.start()
 
@@ -77,7 +78,7 @@ class Scanner:
 
             self.update_stock_batch(batch)
             if not self.stock_batches:
-                time.sleep(30)
+                time.sleep(self.sleep_time)
 
     def update_stock_batch(self, batch):
         with self.data_mutex:
