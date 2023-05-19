@@ -17,9 +17,13 @@ app.config["SECRET_KEY"] = "secret!"
 socketio = SocketIO(app, cors_allowed_origins=["http://localhost:3000"])
 subscribed_topics = defaultdict(set)
 stocks = get_all_stocks()
+print(stocks)
 
 stock_update_topics = []
 stocks_per_topic = {}
+
+scanner_func_topics = []
+
 scanner = None
 
 
@@ -69,6 +73,10 @@ def on_subscribe(topic_id):
     subscribed_topics[sid].add(topic_id)
     join_room(topic_id)
     logger.info(f"{sid} - Subscribed to {topic_id}")
+    if topic_id == "gainers":
+        scanner_func_topics.append((topic_id, scanner.get_rising_stocks))
+    if topic_id == "losers":
+        scanner_func_topics.append((topic_id, scanner.get_falling_stocks))
 
     check_for_stocks(topic_id)
 
@@ -98,8 +106,17 @@ def send_stock_updates():
                 socketio.emit("message", payload, room=topic_id)
         time.sleep(10)
 
+def send_scanner_endpoints():
+    while True:
+        for (topic_id, func) in scanner_func_topics:
+            stocks = func()
+            payload = {"topicId": topic_id, "detected_stocks": stocks}
+            socketio.emit("message", payload, room=topic_id)
+        time.sleep(10)
+
 
 if __name__ == "__main__":
     scanner = Scanner(MixedDataClient())
     socketio.start_background_task(send_stock_updates)
+    socketio.start_background_task(send_scanner_endpoints)
     socketio.run(app, port=5001)
