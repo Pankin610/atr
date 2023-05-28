@@ -63,4 +63,4 @@ class Gainers(Resource):
 api.add_resource(Gainers, '/gainers')
 
 if __name__ == '__main__':
-    app.run()
+    app.run(port=5002)
