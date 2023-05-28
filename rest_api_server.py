@@ -4,6 +4,8 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime
 
+from helpers import *
+
 app = Flask(__name__)
 api = Api(app)
 
@@ -40,6 +42,16 @@ class History(Resource):
         return data.to_json(), 200  # return data with 200 OK
 
 api.add_resource(History, '/history')
+
+class Gainers(Resource):
+    def get(self):
+        df_gainers = get_df("https://finance.yahoo.com/screener/predefined/day_gainers")[0]
+        df_gainers.dropna(how="all", axis=1, inplace=True)
+        df_gainers = df_gainers.replace(float("NaN"), "")
+
+        return df_gainers.to_json(), 200
+
+api.add_resource(Gainers, '/gainers')
 
 if __name__ == '__main__':
     app.run()
