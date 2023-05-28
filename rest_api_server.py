@@ -1,4 +1,5 @@
 from flask import Flask
+from flask_cors import CORS
 from flask_restful import Resource, Api, reqparse
 import pandas as pd
 import yfinance as yf
@@ -7,6 +8,8 @@ from datetime import datetime
 from helpers import *
 
 app = Flask(__name__)
+CORS(app, resources={r'/*': {'origins': 'http://localhost:3000'}})
+
 api = Api(app)
 
 parser = reqparse.RequestParser()
