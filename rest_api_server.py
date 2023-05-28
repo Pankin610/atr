@@ -51,7 +51,14 @@ class History(Resource):
             'Volume': 'volume'
         }
         data.rename(columns=columns, inplace=True)
-        return data.to_json(date_format='iso', date_unit='s', orient='index'), 200
+
+        data.index = pd.to_datetime(data.index, utc=True)
+        if interval == '1d':
+            data.index = data.index.strftime('%Y-%m-%d')
+        elif interval == '15m':
+            data.index = data.index.strftime('%Y-%m-%dT%H:%M')
+
+        return data.to_dict(orient='index'), 200
 
 api.add_resource(History, '/history')
 
