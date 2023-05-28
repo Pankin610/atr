@@ -39,7 +39,16 @@ class History(Resource):
             ignore_tz=True,
         )
 
-        return data.to_json(), 200  # return data with 200 OK
+        columns = {
+            'Open': 'open',
+            'High': 'high',
+            'Low': 'low',
+            'Close': 'close',
+            'Adj Close': 'adjClose',
+            'Volume': 'volume'
+        }
+        data.rename(columns=columns, inplace=True)
+        return data.to_json(date_format='iso', date_unit='s', orient='index'), 200
 
 api.add_resource(History, '/history')
 
