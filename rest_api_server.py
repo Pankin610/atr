@@ -1,12 +1,15 @@
 from flask import Flask
+from flask_cors import CORS
 from flask_restful import Resource, Api, reqparse
 import pandas as pd
 import yfinance as yf
-from datetime import datetime
+from threading import Lock
 
 from helpers import *
 
 app = Flask(__name__)
+CORS(app, resources={r'/*': {'origins': 'http://localhost:3000'}})
+
 api = Api(app)
 
 parser = reqparse.RequestParser()
@@ -15,6 +18,8 @@ parser.add_argument('ticker', type=str)
 parser.add_argument('start', type=str)
 parser.add_argument('end', type=str)
 parser.add_argument('interval', type=str)
+
+lock = Lock()
 
 class History(Resource):
     def post(self):
@@ -26,18 +31,16 @@ class History(Resource):
         end = args['end']
         interval = args['interval']
 
-        start = datetime.strptime(str(start), "%Y-%m-%d")
-        end = datetime.strptime(str(end), "%Y-%m-%d")
-
-        data = yf.download(
-            ticker,
-            start=start,
-            end=end,
-            interval=interval,
-            progress=False,
-            show_errors=True,
-            ignore_tz=True,
-        )
+        with lock:
+            data = yf.download(
+                ticker,
+                start=start,
+                end=end,
+                interval=interval,
+                progress=False,
+                show_errors=True,
+                ignore_tz=True,
+            )
 
         columns = {
             'Open': 'open',
@@ -48,7 +51,14 @@ class History(Resource):
             'Volume': 'volume'
         }
         data.rename(columns=columns, inplace=True)
-        return data.to_json(date_format='iso', date_unit='s', orient='index'), 200
+
+        data.index = pd.to_datetime(data.index, utc=True)
+        if interval == '1d':
+            data.index = data.index.strftime('%Y-%m-%d')
+        elif interval == '15m':
+            data.index = data.index.strftime('%Y-%m-%dT%H:%M')
+
+        return data.to_dict(orient='index'), 200
 
 api.add_resource(History, '/history')
 
