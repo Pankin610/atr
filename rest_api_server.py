@@ -3,6 +3,7 @@ from flask_cors import CORS
 from flask_restful import Resource, Api, reqparse
 import pandas as pd
 import yfinance as yf
+from threading import Lock
 from datetime import datetime
 
 from helpers import *
@@ -19,6 +20,8 @@ parser.add_argument('start', type=str)
 parser.add_argument('end', type=str)
 parser.add_argument('interval', type=str)
 
+lock = Lock()
+
 class History(Resource):
     def post(self):
         
@@ -32,15 +35,16 @@ class History(Resource):
         start = datetime.strptime(str(start), "%Y-%m-%d")
         end = datetime.strptime(str(end), "%Y-%m-%d")
 
-        data = yf.download(
-            ticker,
-            start=start,
-            end=end,
-            interval=interval,
-            progress=False,
-            show_errors=True,
-            ignore_tz=True,
-        )
+        with lock:
+            data = yf.download(
+                ticker,
+                start=start,
+                end=end,
+                interval=interval,
+                progress=False,
+                show_errors=True,
+                ignore_tz=True,
+            )
 
         columns = {
             'Open': 'open',
