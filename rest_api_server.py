@@ -4,7 +4,6 @@ from flask_restful import Resource, Api, reqparse
 import pandas as pd
 import yfinance as yf
 from threading import Lock
-from datetime import datetime
 
 from helpers import *
 
@@ -31,9 +30,6 @@ class History(Resource):
         start = args['start']
         end = args['end']
         interval = args['interval']
-
-        start = datetime.strptime(str(start), "%Y-%m-%d")
-        end = datetime.strptime(str(end), "%Y-%m-%d")
 
         with lock:
             data = yf.download(
