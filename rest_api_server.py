@@ -14,7 +14,7 @@ api = Api(app)
 
 parser = reqparse.RequestParser()
         
-parser.add_argument('ticker', type=str)
+parser.add_argument('tickers', type=list, location='json')
 parser.add_argument('start', type=str)
 parser.add_argument('end', type=str)
 parser.add_argument('interval', type=str)
@@ -26,20 +26,27 @@ class History(Resource):
         
         args = parser.parse_args()
         print(args)
-        ticker = args['ticker']
+        tickers = args['tickers']
         start = args['start']
         end = args['end']
         interval = args['interval']
 
+        date_format_dict = {
+            '1d': '%Y-%m-%d',
+            '15m': '%Y-%m-%dT%H:%M'
+        }
+        date_format = date_format_dict[interval]
+
         with lock:
-            data = yf.download(
-                ticker,
+            df = yf.download(
+                tickers,
                 start=start,
                 end=end,
                 interval=interval,
                 progress=False,
                 show_errors=True,
                 ignore_tz=True,
+                prepost=True
             )
 
         columns = {
@@ -50,15 +57,24 @@ class History(Resource):
             'Adj Close': 'adjClose',
             'Volume': 'volume'
         }
-        data.rename(columns=columns, inplace=True)
+        df.rename(columns=columns, inplace=True)
 
-        data.index = pd.to_datetime(data.index, utc=True)
-        if interval == '1d':
-            data.index = data.index.strftime('%Y-%m-%d')
-        elif interval == '15m':
-            data.index = data.index.strftime('%Y-%m-%dT%H:%M')
+        def create_bar(data, timestamp, ticker):
+            data.update({
+                'ticker': ticker,
+                'dateTime': pd.to_datetime(timestamp, utc=True).strftime(date_format),
+            })
+            return data
 
-        return data.to_dict(orient='index'), 200
+        bars = []
+        if len(set(tickers)) == 1:
+            for timestamp, data in df.to_dict(orient='index').items():
+                bars.append(create_bar(data, timestamp, tickers[0]))
+        else:
+            for (timestamp, ticker), data in df.stack().to_dict(orient='index').items():
+                bars.append(create_bar(data, timestamp, ticker))
+
+        return bars, 200
 
 api.add_resource(History, '/history')
 
