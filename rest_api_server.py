@@ -45,7 +45,7 @@ class History(Resource):
                 prepost=True
             )
 
-        columns = {
+        column_mapping = {
             'Open': 'open',
             'High': 'high',
             'Low': 'low',
@@ -53,7 +53,7 @@ class History(Resource):
             'Adj Close': 'adjClose',
             'Volume': 'volume'
         }
-        df.rename(columns=columns, inplace=True)
+        df.rename(columns=column_mapping, inplace=True)
 
         def create_bar(data, timestamp, ticker):
             data.update({
@@ -73,13 +73,70 @@ class History(Resource):
         return bars, 200
 
 
-class Gainers(Resource):
-    def get(self):
-        df_gainers = get_df("https://finance.yahoo.com/screener/predefined/day_gainers")[0]
-        df_gainers.dropna(how="all", axis=1, inplace=True)
-        df_gainers = df_gainers.replace(float("NaN"), "")
+class Movers(Resource):
+    pattern = re.compile(r'(-)?([0-9]+)(\.[0-9]+)?([MBT])?')
 
-        return df_gainers.to_json(), 200
+    def __parse_numeric(self, text):
+        if not isinstance(text, str):
+            return text
+
+        match = self.pattern.search(text)
+
+        if not match:
+            return None
+
+        minus = match.group(1)
+        number = match.group(2)
+        decimal = match.group(3)
+        unit = match.group(4)
+
+        number = float(number) + float(decimal or 0)
+
+        match unit:
+            case 'M':
+                number *= 1e6
+            case 'B':
+                number *= 1e9
+            case 'T':
+                number *= 1e12
+
+        if minus:
+            number *= -1
+
+        if not decimal or unit:
+            return int(number)
+        return number
+
+    def __process_df(self, df):
+        column_mapping = {
+            'Symbol': 'symbol',
+            'Name': 'name',
+            'Price (Intraday)': 'priceIntraday',
+            'Change': 'change',
+            '% Change': 'percentChange',
+            'Volume': 'volume',
+            'Avg Vol (3 month)': 'avgVol3Month',
+            'Market Cap': 'marketCap',
+            'PE Ratio (TTM)': 'peRatioTTM'
+        }
+        df.rename(columns=column_mapping, inplace=True)
+
+        for column in ['percentChange', 'volume', 'avgVol3Month', 'marketCap']:
+            df[column] = df[column].apply(self.__parse_numeric)
+
+        return df.dropna(axis="columns", how="all").replace(float("NaN"), None).to_dict(orient="records")
+
+    def get(self):
+        df_gainers = get_df(
+            "https://finance.yahoo.com/screener/predefined/day_gainers"
+        )[0]
+        df_losers = get_df(
+            "https://finance.yahoo.com/screener/predefined/day_losers"
+        )[0]
+        return {
+            "gainers": self.__process_df(df_gainers),
+            "losers": self.__process_df(df_losers)
+        }, 200
 
 
 class Search(Resource):
@@ -154,5 +211,5 @@ if __name__ == '__main__':
     api = Api(app)
     api.add_resource(Search, '/search')
     api.add_resource(History, '/history')
-    api.add_resource(Gainers, '/gainers')
+    api.add_resource(Movers, '/movers')
     app.run(port=5002)
