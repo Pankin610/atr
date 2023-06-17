@@ -6,6 +6,7 @@ import yfinance as yf
 from threading import Lock
 import financedatabase as fd
 from helpers import *
+from yahooquery import Ticker
 
 
 class History(Resource):
@@ -130,7 +131,7 @@ class Search(Resource):
             df = df[
                 df['symbol'].str.contains(query, regex=False, case=False) |
                 df['name'].str.contains(query, regex=False, case=False)
-            ]
+                ]
             df['score'] = df.apply(self.__get_row_score, args=(query,), axis=1)
             df = df.sort_values('score', ascending=False)
         return df.head(limit)
@@ -148,6 +149,96 @@ class Search(Resource):
         return result
 
 
+class EquityDetails(Resource):
+    parser = reqparse.RequestParser()
+    equities = fd.Equities().select().reset_index()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parser.add_argument('query', type=str)
+
+    def post(self):
+        args = self.parser.parse_args()
+        query = args['query']
+        result = self.equities[self.equities['symbol'] == query]
+        result = result.drop(columns=['cusip', 'figi', 'composite_figi', 'shareclass_figi', 'isin'])
+        return result.to_dict(orient='records')
+
+
+class EquityNews(Resource):
+    parser = reqparse.RequestParser()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parser.add_argument('query', type=str)
+
+    def post(self):
+        args = self.parser.parse_args()
+        query = args['query']
+        ticker_yf = yf.Ticker(query)
+        return ticker_yf.news
+
+
+class BasicPriceInfo(Resource):
+    parser = reqparse.RequestParser()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parser.add_argument('query', type=str)
+
+    def post(self):
+        args = self.parser.parse_args()
+        query = args['query']
+        ticker = Ticker(query)
+        price = ticker.price[query]
+        basic_price_info = ticker.summary_detail[query]
+        basic_price_info['price'] = price['regularMarketPrice']
+        if 'exDividendDate' in basic_price_info:
+            basic_price_info['exDividendDate'] = basic_price_info['exDividendDate'].split()[0]
+        else:
+            basic_price_info['exDividendDate'] = None
+        return basic_price_info
+
+
+class EquityKeyStats(Resource):
+    parser = reqparse.RequestParser()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parser.add_argument('query', type=str)
+
+    def post(self):
+        args = self.parser.parse_args()
+        query = args['query']
+        ticker = Ticker(query)
+        equity_key_stats = ticker.key_stats[query]
+        price = ticker.price[query]['regularMarketPrice']
+        equity_key_stats['priceToEarnings'] = round(equity_key_stats['trailingEps'] / price, 2)
+        if 'priceToBook' not in equity_key_stats and 'bookValue' in equity_key_stats:
+            equity_key_stats['priceToBook'] = round(price / equity_key_stats['bookValue'], 2)
+        return equity_key_stats
+
+
+class EquityEarningsInfo(Resource):
+    parser = reqparse.RequestParser()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parser.add_argument('query', type=str)
+
+    def post(self):
+        args = self.parser.parse_args()
+        query = args['query']
+        ticker = Ticker(query)
+        result = {}
+        result['earningsDate'] = ticker.calendar_events[query]['earnings']['earningsDate']
+        result['earningsDate'] = [date.split()[0] for date in result['earningsDate']]
+        result['epsForward'] = ticker.earnings_trend[query]['trend'][0]['earningsEstimate']['avg']
+        result['peForward'] = round(ticker.price[query]['regularMarketPrice'] / result['epsForward'], 2)
+        result['yearAgoEps'] = ticker.earnings_trend[query]['trend'][0]['earningsEstimate']['yearAgoEps']
+        return result
+
+
 if __name__ == '__main__':
     app = Flask(__name__)
     CORS(app, resources={r'/*': {'origins': 'http://localhost:3000'}})
@@ -155,4 +246,9 @@ if __name__ == '__main__':
     api.add_resource(Search, '/search')
     api.add_resource(History, '/history')
     api.add_resource(Gainers, '/gainers')
+    api.add_resource(EquityDetails, '/equity-details')
+    api.add_resource(EquityNews, '/equity-news')
+    api.add_resource(BasicPriceInfo, '/basic-price-info')
+    api.add_resource(EquityKeyStats, '/equity-key-stats')
+    api.add_resource(EquityEarningsInfo, '/equity-earnings-info')
     app.run(port=5002)
