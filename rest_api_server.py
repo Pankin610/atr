@@ -119,8 +119,7 @@ class UsIndices(Resource):
 
         return indices.to_json(), 200
 
-api.add_resource(Gainers, '/gainers')
-api.add_resource(UsIndices, '/usindices')
+
 
 class Search(Resource):
     parser = reqparse.RequestParser()
@@ -195,4 +194,5 @@ if __name__ == '__main__':
     api.add_resource(Search, '/search')
     api.add_resource(History, '/history')
     api.add_resource(Gainers, '/gainers')
+    api.add_resource(UsIndices, '/usindices')
     app.run(port=5002)
