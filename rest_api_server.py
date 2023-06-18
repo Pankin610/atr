@@ -82,7 +82,7 @@ class History(Resource):
 
 
 class Movers(Resource):
-    pattern = re.compile(r'(-)?([0-9]+)(\.[0-9]+)?([MBT])?')
+    pattern = re.compile(r'(-)?([0-9]+)(\.[0-9]+)?([MBT%])?')
 
     def __parse_numeric(self, text):
         if not isinstance(text, str):
@@ -107,11 +107,13 @@ class Movers(Resource):
                 number *= 1e9
             case 'T':
                 number *= 1e12
+            case '%':
+                number *= 1e-2
 
         if minus:
             number *= -1
 
-        if not decimal or unit:
+        if not decimal or unit in ['M', 'B', 'T']:
             return int(number)
         return number
 
@@ -261,7 +263,13 @@ class TickerDetails(Resource):
         def get_previous_close(symbol: str):
             try:
                 return prices[symbol]['regularMarketPreviousClose']
-            except KeyError:
+            except:
+                return None
+
+        def get_percent_change(symbol: str):
+            try:
+                return prices[symbol]['regularMarketChangePercent']
+            except:
                 return None
 
         def keep_columns(df, columns):
@@ -272,7 +280,8 @@ class TickerDetails(Resource):
             df = df[df['symbol'].notna() & df['name'].notna()]
             df = df[df['symbol'].isin(tickers)]
             df['previousClose'] = df['symbol'].apply(get_previous_close)
-            df = keep_columns(df, ['symbol', 'name', 'previousClose'])
+            df['percentChange'] = df['symbol'].apply(get_percent_change)
+            df = keep_columns(df, ['symbol', 'name', 'previousClose', 'percentChange'])
             records = df.to_dict(orient='records')
             result.extend(records)
         return result
