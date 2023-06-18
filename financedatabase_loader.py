@@ -32,6 +32,18 @@ def __load_data_frames() -> DataFramesDict:
         'Money Markets': fd.Moneymarkets().select()
     }
     logger.success("Successfully loaded all FinanceDatabase data frames")
+
+    if not 'BTC-USD' in dfs['Cryptos'].index:
+        dfs['Cryptos'] = pd.concat([dfs['Cryptos'], pd.DataFrame([{
+            'symbol': 'BTC-USD',
+            'name': 'Bitcoin USD',
+            'cryptocurrency': 'BTC',
+            'currency': 'USD',
+            'summary': 'Bitcoin (BTC) is a cryptocurrency...',
+            'exchange': 'CCC',
+            'market': 'ccc_market'
+        }])])
+
     return dfs
 
 
