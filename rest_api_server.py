@@ -233,6 +233,44 @@ class Search(Resource):
                 result[name] = matches
         return result
 
+
+class TickerDetails(Resource):
+    parser = reqparse.RequestParser()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parser.add_argument('tickers', type=list, location='json')
+
+    def post(self):
+        args = self.parser.parse_args()
+        tickers = args['tickers']
+
+        prices = {}
+        try:
+            prices = Ticker(tickers).price
+        except:
+            pass
+
+        def get_previous_close(symbol: str):
+            try:
+                return prices[symbol]['regularMarketPreviousClose']
+            except KeyError:
+                return None
+
+        def keep_columns(df, columns):
+            return df.drop(columns=set(df.columns) - set(columns))
+
+        result = []
+        for df in fdb_loader.get_data_frames().values():
+            df = df[df['symbol'].notna() & df['name'].notna()]
+            df = df[df['symbol'].isin(tickers)]
+            df['previousClose'] = df['symbol'].apply(get_previous_close)
+            df = keep_columns(df, ['symbol', 'name', 'previousClose'])
+            records = df.to_dict(orient='records')
+            result.extend(records)
+        return result
+
+
 class Dividends(Resource):
     parser = reqparse.RequestParser()
 
@@ -362,6 +400,7 @@ if __name__ == '__main__':
     api.add_resource(Search, '/search')
     api.add_resource(History, '/history')
     api.add_resource(Movers, '/movers')
+    api.add_resource(TickerDetails, '/details')
     api.add_resource(EquityDetails, '/equity-details')
     api.add_resource(EquityNews, '/equity-news')
     api.add_resource(BasicPriceInfo, '/basic-price-info')
