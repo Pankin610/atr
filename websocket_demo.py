@@ -6,6 +6,7 @@ from html import escape
 from uuid import uuid4
 from data_client import *
 import json
+from atr import *
 
 from flask import Flask, Request, request
 from flask_socketio import SocketIO, join_room, leave_room
@@ -23,6 +24,8 @@ stock_update_topics = []
 stocks_per_topic = {}
 
 scanner_func_topics = []
+
+atr_topics = []
 
 scanner = None
 
@@ -73,6 +76,11 @@ def on_subscribe(topic_id):
     subscribed_topics[sid].add(topic_id)
     join_room(topic_id)
     logger.info(f"{sid} - Subscribed to {topic_id}")
+
+    if topic_id[:4] == "atr#":
+        atr_topics.append(topic_id[4:])
+        return
+
     if topic_id == "gainers":
         scanner_func_topics.append((topic_id, scanner.get_rising_stocks))
     if topic_id == "losers":
@@ -115,8 +123,36 @@ def send_scanner_endpoints():
         time.sleep(10)
 
 
+def parse_atr_params(req):
+    instrument = ""
+    timeframe = ""
+    for param in req.split("$"):
+        name, val = param.split("=")[:2]
+        if name == "instrument":
+            instrument = val
+        if name == "timeframe":
+            timeframe = val
+        
+    return instrument, timeframe
+
+
+def send_atr():
+    while True:
+        for topic_id in atr_topics:
+            instrument, timeframe = parse_atr_params(topic_id)
+            try:
+                atr = get_current_atr(instrument, timeframe, scanner.data_client)
+            except Exception:
+                print("ATR unavailable")
+            
+            payload = {"topicId": topic_id, "atr": str(atr)}
+            socketio.emit("message", payload, room=topic_id)
+        time.sleep(10)
+
+
 if __name__ == "__main__":
     scanner = Scanner(MixedDataClient())
     socketio.start_background_task(send_stock_updates)
     socketio.start_background_task(send_scanner_endpoints)
+    socketio.start_background_task(send_atr)
     socketio.run(app, port=5001)
