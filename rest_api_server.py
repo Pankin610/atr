@@ -81,6 +81,46 @@ class Gainers(Resource):
 
         return df_gainers.to_json(), 200
 
+class UsIndices(Resource):
+    def get(self):
+        url = (
+            "https://www.wsj.com/market-data/stocks?id=%7B%22application%22%3A%22WSJ%22%2C%22instruments%22%3A%5B%7B"
+            "%22symbol%22%3A%22INDEX%2FUS%2F%2FDJIA%22%2C%22name%22%3A%22DJIA%22%7D%2C%7B%22symbol%22%3A%22INDEX%2FUS%2F"
+            "%2FCOMP%22%2C%22name%22%3A%22Nasdaq%20Composite%22%7D%2C%7B%22symbol%22%3A%22INDEX%2FUS%2F%2FSPX%22%2C%22name"
+            "%22%3A%22S%26P%20500%22%7D%2C%7B%22symbol%22%3A%22INDEX%2FUS%2F%2FDWCF%22%2C%22name%22%3A%22DJ%20Total%20Stock"
+            "%20Market%22%7D%2C%7B%22symbol%22%3A%22INDEX%2FUS%2F%2FRUT%22%2C%22name%22%3A%22Russell%202000%22%7D%2C%7B"
+            "%22symbol%22%3A%22INDEX%2FUS%2F%2FNYA%22%2C%22name%22%3A%22NYSE%20Composite%22%7D%2C%7B%22symbol%22%3A%22INDEX"
+            "%2FUS%2F%2FB400%22%2C%22name%22%3A%22Barron%27s%20400%22%7D%2C%7B%22symbol%22%3A%22INDEX%2FUS%2F%2FVIX%22%2C%22"
+            "name%22%3A%22CBOE%20Volatility%22%7D%2C%7B%22symbol%22%3A%22FUTURE%2FUS%2F%2FDJIA%20FUTURES%22%2C%22name%22%3A%"
+            "22DJIA%20Futures%22%7D%2C%7B%22symbol%22%3A%22FUTURE%2FUS%2F%2FS%26P%20500%20FUTURES%22%2C%22name%22%3A%22S%26P"
+            "%20500%20Futures%22%7D%5D%7D&type=mdc_quotes"
+        )
+        try:
+            response = request(
+                url,
+               # headers={"User-Agent": get_user_agent()},
+            )
+        except requests.exceptions.RequestException:
+            print("Could not retrieve data from wsj.")
+            return
+        data = response.json()
+
+        name, last_price, net_change, percent_change = [], [], [], []
+
+        for entry in data["data"]["instruments"]:
+            name.append(entry["formattedName"])
+            last_price.append(entry["lastPrice"])
+            net_change.append(entry["priceChange"])
+            percent_change.append(entry["percentChange"])
+
+        indices = pd.DataFrame(
+            {" ": name, "Price": last_price, "Chg": net_change, "%Chg": percent_change}
+        )
+
+        return indices.to_json(), 200
+
+api.add_resource(Gainers, '/gainers')
+api.add_resource(UsIndices, '/usindices')
 
 class Search(Resource):
     parser = reqparse.RequestParser()
