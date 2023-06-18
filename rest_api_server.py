@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask
 from flask_cors import CORS
 from flask_restful import Resource, Api, reqparse
 import pandas as pd
@@ -10,6 +10,10 @@ from yahooquery import Ticker
 from urllib.parse import quote
 import feedparser
 import time
+from bs4 import BeautifulSoup
+from urllib.request import Request, urlopen
+from datetime import datetime
+import numpy as np
 
 
 class History(Resource):
@@ -411,8 +415,7 @@ class SearchNews(Resource):
         when = args['when']
         limit = args['limit']
         if not term:
-            response_body = {'message': 'No search term provided'}
-            return jsonify(response_body), 400
+            return {}, 400
         retries = 10
         got_data = False
         term = quote(term)
@@ -422,11 +425,9 @@ class SearchNews(Resource):
             if hasattr(data, 'status') and data.status == 200 and data.entries:
                 got_data = True
             elif (not hasattr(data, 'status')) or data.status != 200:
-                response_body = {'message': 'External API error'}
-                return jsonify(response_body), 502
+                return {}, 502
             elif retries == 0:
-                response_body = {'message': 'Retries limit reached'}
-                return jsonify(response_body), 504
+                return {}, 504
             retries -= 1
         df = pd.DataFrame(data.entries, columns=['title', 'link', 'published', 'source'])
         df['source'] = df['source'].apply(lambda x: x['title'])
@@ -445,6 +446,100 @@ class SearchNews(Resource):
         df.columns = ['title', 'link', 'publisher', 'date']
         return df.to_dict(orient='records'), 200
 
+#Allowed statement values: balance-sheet, financials, cash-flow
+class GetFinancialStatement(Resource):
+    parser = reqparse.RequestParser()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parser.add_argument('ticker', type=str)
+        self.parser.add_argument('statement', type=str)
+    def post(self):
+        def format_value(value):
+            if pd.isnull(value):
+                return '-'
+            elif value >= 1e9:
+                return f'{value/1e9:.2f} BLN'
+            elif value >= 1e6:
+                return f'{value/1e6:.2f} M'
+            else:
+                return str(value)
+        args = self.parser.parse_args()
+        ticker = args['ticker']
+        statement = args['statement']
+        url = (
+        "https://uk.finance.yahoo.com/quote/"
+        + ticker
+        + "/"
+        + statement
+        + "?p="
+        + ticker
+    )
+        req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        webpage = urlopen(req).read()
+        soup = BeautifulSoup(webpage, "html.parser")
+        features = soup.find_all("div", class_="D(tbr)")
+        headers = []
+        temp_list = []
+        final = []
+        if len(features) == 0:
+            return {}, 502
+        index = 0
+        for item in features[0].find_all("div", class_="D(ib)"):
+            headers.append(item.text)
+        while index <= len(features) - 1:
+            temp = features[index].find_all("div", class_="D(tbc)")
+            for line in temp:
+                temp_list.append(line.text)
+            final.append(temp_list)
+            temp_list = []
+            index += 1
+
+        df = pd.DataFrame(final[1:])
+        if df.empty:
+            return pd.DataFrame()
+        new_headers = []
+
+        if statement == "balance-sheet":
+            for dates in headers[1:]:
+                read = datetime.strptime(dates, "%d/%m/%Y")
+                write = read.strftime("%Y-%m-%d")
+                new_headers.append(write)
+            new_headers[:0] = ["Breakdown"]
+            df.columns = new_headers
+            df.set_index("Breakdown", inplace=True)
+        elif statement == "financials":
+            for dates in headers[2:]:
+                read = datetime.strptime(dates, "%d/%m/%Y")
+                write = read.strftime("%Y-%m-%d")
+                new_headers.append(write)
+            new_headers[:0] = ["Breakdown", "ttm"]
+            df.columns = new_headers
+            df.set_index("Breakdown", inplace=True)
+        elif statement == "cash-flow":
+            for dates in headers[2:]:
+                read = datetime.strptime(dates, "%d/%m/%Y")
+                write = read.strftime("%Y-%m-%d")
+                new_headers.append(write)
+            new_headers[:0] = ["Breakdown", "ttm"]
+            df.columns = new_headers
+            df.set_index("Breakdown", inplace=True)
+
+        df.replace("", np.nan, inplace=True)
+        df.replace("-", np.nan, inplace=True)
+        df = df.dropna(how="all")
+        df = df.replace(",", "", regex=True)
+        df = df.replace("k", "", regex=True)
+        df = df.astype("float")
+        df.index = df.index.str.replace(",", "")
+
+        not_skipped = ~df.reset_index()["Breakdown"].str.contains("EPS", case=False)
+        skipped = df.reset_index()["Breakdown"].str.contains("EPS", case=False)
+        skipped_df = df.reset_index()[skipped].set_index("Breakdown")
+        transformed = df.reset_index()[not_skipped].set_index("Breakdown") * 1000
+        df = pd.concat([transformed, skipped_df])
+
+        df = df.applymap(format_value)
+        return df.to_dict(orient='index')
 
 if __name__ == '__main__':
     app = Flask(__name__)
@@ -462,4 +557,5 @@ if __name__ == '__main__':
     api.add_resource(UsIndices, '/usindices')
     api.add_resource(Dividends, '/dividends')
     api.add_resource(SearchNews, '/search-news')
+    api.add_resource(GetFinancialStatement, '/get-financial-statement')
     app.run(port=5002)
