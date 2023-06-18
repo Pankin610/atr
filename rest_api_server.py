@@ -4,7 +4,7 @@ from flask_restful import Resource, Api, reqparse
 import pandas as pd
 import yfinance as yf
 from threading import Lock
-import financedatabase as fd
+import financedatabase_loader as fdb_loader
 from helpers import *
 from yahooquery import Ticker
 
@@ -182,16 +182,6 @@ class UsIndices(Resource):
 class Search(Resource):
     parser = reqparse.RequestParser()
 
-    data_frames = {
-        'Equities': fd.Equities().select(),
-        'ETFs': fd.ETFs().select(),
-        'Funds': fd.Funds().select(),
-        'Currencies': fd.Currencies().select(),
-        'Cryptos': fd.Cryptos().select(),
-        'Indices': fd.Indices().select(),
-        'Money Markets': fd.Moneymarkets().select()
-    }
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.parser.add_argument('query', type=str)
@@ -218,7 +208,6 @@ class Search(Resource):
         return score
 
     def __get_best_matches(self, df, query, limit=3):
-        df = df.reset_index()
         df = df[df['symbol'].notna() & df['name'].notna()]
         query = query.lower()
         if len(query) <= 2:
@@ -237,7 +226,7 @@ class Search(Resource):
         query = args['query']
 
         result = {}
-        for name, df in self.data_frames.items():
+        for name, df in fdb_loader.get_data_frames().items():
             matches = self.__get_best_matches(df, query).fillna(
                 value='').to_dict(orient='records')
             if matches:
@@ -278,7 +267,7 @@ class Dividends(Resource):
 
 class EquityDetails(Resource):
     parser = reqparse.RequestParser()
-    equities = fd.Equities().select().reset_index()
+    equities = fdb_loader.get_data_frames()['Equities']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
