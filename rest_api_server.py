@@ -186,6 +186,37 @@ class Search(Resource):
                 result[name] = matches
         return result
 
+class Dividends(Resource):
+    parser = reqparse.RequestParser()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parser.add_argument('symbol', type=str)
+
+    def get(self):
+        args = self.parser.parse_args()
+        symbol = args['symbol']
+        stock = yf.Ticker(symbol)
+        dividends = stock.dividends
+
+        last_dividend_date = dividends.index[-1]
+        dividend_per_share = dividends[-1]
+
+        ttm_yield = stock.dividends[-4:].sum() / stock.history(period="1y")["Close"].mean() * 100
+
+        start_date = dividends.index[-5]
+        end_date = dividends.index[-1]
+
+        dividend_growth_rate = ((dividends[end_date] / dividends[start_date]) ** (1/5) - 1) * 100
+
+        res = pd.DataFrame(
+            {"last_dividend_date": last_dividend_date, "dividend_per_share": dividend_per_share, "ttm_yield": ttm_yield,
+            "dividend_growth_rate": dividend_growth_rate}
+        )
+
+        return res.to_json(), 200
+
+
 
 if __name__ == '__main__':
     app = Flask(__name__)
@@ -195,4 +226,5 @@ if __name__ == '__main__':
     api.add_resource(History, '/history')
     api.add_resource(Gainers, '/gainers')
     api.add_resource(UsIndices, '/usindices')
+    api.add_resource(Dividends, '/dividends')
     app.run(port=5002)
