@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_restful import Resource, Api, reqparse
 import pandas as pd
@@ -7,6 +7,9 @@ from threading import Lock
 import financedatabase_loader as fdb_loader
 from helpers import *
 from yahooquery import Ticker
+from urllib.parse import quote
+import feedparser
+import time
 
 
 class History(Resource):
@@ -393,6 +396,56 @@ class EquityEarningsInfo(Resource):
         return result
 
 
+class SearchNews(Resource):
+    parser = reqparse.RequestParser()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parser.add_argument('term', type=str)
+        self.parser.add_argument('when', type=int)
+        self.parser.add_argument('limit', type=int)
+
+    def post(self):
+        args = self.parser.parse_args()
+        term = args['term']
+        when = args['when']
+        limit = args['limit']
+        if not term:
+            response_body = {'message': 'No search term provided'}
+            return jsonify(response_body), 400
+        retries = 10
+        got_data = False
+        term = quote(term)
+        while not got_data:
+            data = feedparser.parse(
+                f'https://news.google.com/rss/search?q={term}&hl=en-US&gl=US&ceid=US:en&when:{when}h+allinurl')
+            if hasattr(data, 'status') and data.status == 200 and data.entries:
+                got_data = True
+            elif (not hasattr(data, 'status')) or data.status != 200:
+                response_body = {'message': 'External API error'}
+                return jsonify(response_body), 502
+            elif retries == 0:
+                response_body = {'message': 'Retries limit reached'}
+                return jsonify(response_body), 504
+            retries -= 1
+        df = pd.DataFrame(data.entries, columns=['title', 'link', 'published', 'source'])
+        df['source'] = df['source'].apply(lambda x: x['title'])
+        df['title'] = df['title'].apply(lambda x: x.rsplit('-', 1)[0].strip())
+        df['title'] = df['title'].apply(lambda x: x.rsplit('|', 1)[0].strip())
+        df['published'] = pd.to_datetime(df['published'])
+        try:
+            timezone_name = time.tzname[0]
+            df['published'] = df['published'].dt.tz_convert(timezone_name)
+        except:
+            pass
+        df = df.sort_values(by=['published'], ascending=False)
+        df['published'] = df['published'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        df = df[:limit]
+        df = df[['title', 'link', 'source', 'published']]
+        df.columns = ['title', 'link', 'publisher', 'date']
+        return df.to_dict(orient='records'), 200
+
+
 if __name__ == '__main__':
     app = Flask(__name__)
     CORS(app, resources={r'/*': {'origins': 'http://localhost:3000'}})
@@ -408,4 +461,5 @@ if __name__ == '__main__':
     api.add_resource(EquityEarningsInfo, '/equity-earnings-info')
     api.add_resource(UsIndices, '/usindices')
     api.add_resource(Dividends, '/dividends')
+    api.add_resource(SearchNews, '/search-news')
     app.run(port=5002)
